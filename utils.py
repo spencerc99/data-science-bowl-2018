@@ -56,8 +56,11 @@ def show_image_and_masks(patient):
 
 
 def resize_images(img):
-    resizedimg = transform.resize(img, (256, 256, 3))
+    resizedimg = transform.resize(img, (256, 256, 1))
     return resizedimg
+
+def resize_train_images(img):
+    return transform.resize(img, (256, 256, 3))
 
 def load_input_image(patient, inp_folder=INPUT_FOLDER):
     return rgb2gray(imread(inp_folder + patient + '/images/' + os.listdir(inp_folder + patient + '/images/')[0]))
@@ -95,10 +98,10 @@ def show_image_and_masks(patient):
 def get_resized_train_data():
     # use this and then split stuff into validation
     input_x = np.zeros((len(patients), 256, 256, 3))
-    input_y = np.zeros((len(patients), 256, 256, 3))
+    input_y = np.zeros((len(patients), 256, 256, 1))
     train_data = int(len(patients) * .8)
     for i in range(train_data):
-        img = resize_images(load_input_image(patients[i]))
+        img = resize_train_images(load_input_image(patients[i]))
         input_x[i] = img
         yimg = resize_images(get_composed_masks_img(patients[i]))
         input_y[i] = yimg
