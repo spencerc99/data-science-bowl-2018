@@ -76,14 +76,15 @@ test_patients = os.listdir(TEST_FOLDER)
 # test_patients = next(os.walk(TEST_FOLDER))[1]
 
 X_test = np.zeros((len(test_patients), IMG_HEIGHT, IMG_WIDTH,
-                   IMG_CHANNELS), dtype=np.uint8)
+                   IMG_CHANNELS), dtype=np.float32)
 sizes_test = []
 print('Getting and resizing test images ... ')
 for n, id_ in tqdm(enumerate(test_patients), total=len(test_patients)):
     path = TEST_FOLDER + id_
     img = imread(path + '/images/' + id_ + '.png')[:, :, :IMG_CHANNELS]
     sizes_test.append([img.shape[0], img.shape[1]])
-    img = utils.resize_images(img)
+    img = resize(img, (IMG_WIDTH, IMG_HEIGHT, IMG_CHANNELS),
+                            mode='constant', preserve_range=True))
     X_test[n] = img
 print(sizes_test)
 print("Making predictions for %d test patients" % len(test_patients))

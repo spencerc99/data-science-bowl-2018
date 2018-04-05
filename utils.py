@@ -13,13 +13,8 @@ from tqdm import tqdm
 import shutil
 import tensorflow as tf
 from keras import backend as K
+from constants import *
 
-# Some constants
-TRAIN_FOLDER = './data/train/'
-TEST_FOLDER = './data/test/'
-TEST_INPUT_FOLDER = './data/test/input/'
-INPUT_FOLDER = TRAIN_FOLDER + 'input/'
-LABELS_FOLDER = TRAIN_FOLDER + 'labels/'
 patients = os.listdir(INPUT_FOLDER)
 patients.sort()
 
@@ -60,11 +55,11 @@ def show_image_and_masks(patient):
 
 
 def resize_images(img):
-    resizedimg = transform.resize(img, (256, 256, 3))
+    resizedimg = transform.resize(img, (IMG_WEIGHT, IMG_HEIGHT, IMG_CHANNELS), preserve_range=True)
     return resizedimg
 
 def resize_train_images(img):
-    return transform.resize(img, (256, 256, 3))
+    return transform.resize(img, (IMG_WEIGHT, IMG_HEIGHT, IMG_CHANNELS), preserve_range=True)
 
 def load_input_image(patient, inp_folder=INPUT_FOLDER):
     return rgb2gray(imread(inp_folder + patient + '/images/' + os.listdir(inp_folder + patient + '/images/')[0]))
