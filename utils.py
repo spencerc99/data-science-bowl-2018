@@ -9,6 +9,10 @@ import random
 from collections import defaultdict
 from PIL import Image
 from skimage.color import rgb2gray
+from tqdm import tqdm
+import shutil
+import tensorflow as tf
+from keras import backend as K
 
 # Some constants
 TRAIN_FOLDER = './data/train/'
@@ -150,3 +154,74 @@ def analyze_list_of_images(patients, predict_method):
         im_df = analyze_image(patient, predict_method)
         all_df = all_df.append(im_df, ignore_index=True)
     return all_df
+
+def data_aug(image,label,angel=30,resize_rate=0.9):
+    '''
+    source: https://www.kaggle.com/shenmbsw/data-augmentation-and-tensorflow-u-net
+    '''
+    flip = random.randint(0, 1)
+    size = image.shape[0]
+    rsize = random.randint(np.floor(resize_rate*size),size)
+    w_s = random.randint(0,size - rsize)
+    h_s = random.randint(0,size - rsize)
+    sh = random.random()/2-0.25
+    rotate_angel = random.random()/180*np.pi*angel
+    # Create Afine transform
+    afine_tf = transform.AffineTransform(shear=sh,rotation=rotate_angel)
+    # Apply transform to image data
+    image = transform.warp(image, inverse_map=afine_tf,mode='edge')
+    label = transform.warp(label, inverse_map=afine_tf,mode='edge')
+    # Randomly corpping image frame
+    image = image[w_s:w_s+size,h_s:h_s+size,:]
+    label = label[w_s:w_s+size,h_s:h_s+size]
+    # Ramdomly flip frame
+    if flip:
+        image = image[:,::-1,:]
+        label = label[:,::-1]
+    return image, label
+
+def make_data_augmentation(image_ids, split_num):
+    for ax_index, image_id in tqdm(enumerate(image_ids), total=len(image_ids)):
+        image, labels = load_input_image(image_id), load_input_masks(image_id)
+        if not os.path.exists(TRAIN_FOLDER + "/{}/augs/".format(image_id)):
+            os.makedirs(TRAIN_FOLDER + "/{}/augs/".format(image_id))
+        if not os.path.exists(TRAIN_FOLDER + "/{}/augs_masks/".format(image_id)):
+            os.makedirs(
+                TRAIN_FOLDER + "/{}/augs_masks/".format(image_id))
+
+        # also save the original image in augmented file
+        plt.imsave(
+            fname=TRAIN_FOLDER + "/{}/augs/{}.png".format(image_id, image_id), arr=image)
+        plt.imsave(
+            fname=TRAIN_FOLDER + "/{}/augs_masks/{}.png".format(image_id, image_id), arr=labels)
+
+        for i in range(split_num):
+            new_image, new_labels = data_aug(
+                image, labels, angel=5, resize_rate=0.9)
+            aug_img_dir = TRAIN_FOLDER + "/{}/augs/{}_{}.png".format(
+                image_id, image_id, i)
+            aug_mask_dir = TRAIN_FOLDER + "/{}/augs_masks/{}_{}.png".format(
+                image_id, image_id, i)
+            plt.imsave(fname=aug_img_dir, arr=new_image)
+            plt.imsave(fname=aug_mask_dir, arr=new_labels)
+
+
+def clean_data_augmentation(image_ids):
+    for ax_index, image_id in tqdm(enumerate(image_ids), total=len(image_ids)):
+        if os.path.exists(TRAIN_FOLDER + "/{}/augs/".format(image_id)):
+            shutil.rmtree(TRAIN_FOLDER + "/{}/augs/".format(image_id))
+        if os.path.exists(TRAIN_FOLDER + "/{}/augs_masks/".format(image_id)):
+            shutil.rmtree(
+                TRAIN_FOLDER + "/{}/augs_masks/".format(image_id))
+
+# Define IoU metric
+def mean_iou(y_true, y_pred):
+    prec = []
+    for t in np.arange(0.5, 1.0, 0.05):
+        y_pred_ = tf.to_int32(y_pred > t)
+        score, up_opt = tf.metrics.mean_iou(y_true, y_pred_, 2)
+        K.get_session().run(tf.local_variables_initializer())
+        with tf.control_dependencies([up_opt]):
+            score = tf.identity(score)
+        prec.append(score)
+    return K.mean(K.stack(prec), axis=0)

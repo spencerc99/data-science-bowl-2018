@@ -1,0 +1,10 @@
+IMG_WIDTH = 256
+IMG_HEIGHT = 256
+IMG_CHANNELS = 3
+DROPOUT_RATE = 0.2
+
+TRAIN_FOLDER = './data/train/'
+TEST_FOLDER = './data/test/'
+TEST_INPUT_FOLDER = './data/test/input/'
+INPUT_FOLDER = TRAIN_FOLDER + 'input/'
+LABELS_FOLDER = TRAIN_FOLDER + 'labels/'
