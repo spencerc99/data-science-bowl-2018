@@ -72,9 +72,8 @@ def prob_to_rles(x, cutoff=0.5):
 #     im_df = im_df.append(s, ignore_index=True)
 #     return im_df
 
-
-# test_patients = os.listdir(TEST_FOLDER)
-test_patients = next(os.walk(TEST_FOLDER))[1]
+test_patients = os.listdir(TEST_FOLDER)
+# test_patients = next(os.walk(TEST_FOLDER))[1]
 
 X_test = np.zeros((len(test_patients), IMG_HEIGHT, IMG_WIDTH,
                    IMG_CHANNELS), dtype=np.uint8)
@@ -84,13 +83,12 @@ for n, id_ in tqdm(enumerate(test_patients), total=len(test_patients)):
     path = TEST_FOLDER + id_
     img = imread(path + '/images/' + id_ + '.png')[:, :, :IMG_CHANNELS]
     sizes_test.append([img.shape[0], img.shape[1]])
-    img = resize(img, (IMG_HEIGHT, IMG_WIDTH),
-                 mode='constant', preserve_range=True)
+    img = utils.resize_images(img)
     X_test[n] = img
-
+print(sizes_test)
 print("Making predictions for %d test patients" % len(test_patients))
 preds_test = model.predict(X_test, verbose=1)
-
+print(preds_test.shape)
 preds_test_upsampled = []
 for i in range(len(preds_test)):
     preds_test_upsampled.append(resize(np.squeeze(preds_test[i]),
@@ -101,6 +99,10 @@ new_test_ids = []
 rles = []
 for n, id_ in enumerate(test_patients):
     rle = list(prob_to_rles(preds_test_upsampled[n]))
+    if len(rle) == 0:
+        from pdb import set_trace
+        set_trace()
+        print("help")
     rles.extend(rle)
     new_test_ids.extend([id_] * len(rle))
 sub = pd.DataFrame()

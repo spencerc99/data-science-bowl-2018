@@ -60,7 +60,7 @@ def show_image_and_masks(patient):
 
 
 def resize_images(img):
-    resizedimg = transform.resize(img, (256, 256, 1))
+    resizedimg = transform.resize(img, (256, 256, 3))
     return resizedimg
 
 def resize_train_images(img):
