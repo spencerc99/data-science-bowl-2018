@@ -90,7 +90,7 @@ class UNet(BasicModel):
     def train(self):
         X_train, y_train = get_resized_train_data()
         earlystopper = EarlyStopping(patience=5, verbose=1)
-        checkpointer = ModelCheckpoint('%s-model-dsbowl2018-1.h5' % self.config['model_name'], verbose=1,
+        checkpointer = ModelCheckpoint('%s-model-dsbowl2018-1.h5' % self.model_name, verbose=1,
                                        save_best_only=True)
         return self.model.fit(X_train, y_train, validation_split=0.1, batch_size=16, epochs=50,
                                  callbacks=[earlystopper, checkpointer])  # Define IoU metric
