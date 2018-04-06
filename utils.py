@@ -98,8 +98,7 @@ def get_resized_train_data():
     # use this and then split stuff into validation
     input_x = np.zeros((len(patients), 256, 256, 3))
     input_y = np.zeros((len(patients), 256, 256, 1))
-    train_data = int(len(patients) * .8)
-    for i in range(train_data):
+    for i in range(len(patients)):
         img = resize_train_images(load_input_image(patients[i]))
         input_x[i] = img
         yimg = resize_test_images(get_composed_masks_img(patients[i]))
