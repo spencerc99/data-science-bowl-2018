@@ -13,7 +13,7 @@ from models import make_model
 flags = tf.app.flags
 flags.DEFINE_boolean('dry_run', False, 'Perform a dry_run (testing purpose)')
 
-flags.DEFINE_string('model_name', 'unet', 'Unique name of the model')
+flags.DEFINE_string('model_name', 'UNet', 'Unique name of the model')
 flags.DEFINE_boolean('best', False, 'Force to use the best known configuration')
 flags.DEFINE_float('initial_mean', 0., 'Initial mean for NN')
 flags.DEFINE_float('initial_stddev', 1e-2, 'Initial standard deviation for NN')
@@ -26,8 +26,11 @@ flags.DEFINE_integer('random_seed', 42, 'Value of random seed')
 def main(_):
     config = flags.FLAGS.__flags.copy()
     # fixed_params must be a string to be passed in the shell, let's use JSON
-    config["fixed_params"] = json.loads(config["fixed_params"])
+    # config["fixed_params"] = json.loads(config["fixed_params"])
 
     model = make_model(config)
     
     results = model.train()
+
+if __name__ == '__main__':
+    tf.app.run()

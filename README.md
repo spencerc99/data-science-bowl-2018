@@ -11,3 +11,6 @@ Download the data from https://www.kaggle.com/c/data-science-bowl-2018/data. Dow
     - unzip test in here
 
 ## Approach
+
+## References
+* https://blog.metaflow.fr/tensorflow-a-proposal-of-good-practices-for-files-folders-and-models-architecture-f23171501ae3

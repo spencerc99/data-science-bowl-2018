@@ -63,7 +63,7 @@ class UNetDilated(BasicModel):
         self.model = Model(inputs=[inps], outputs=[outs])
         self.model.compile(optimizer='adam', loss='binary_crossentropy', metrics=[mean_iou])
 
-    def train():
+    def train(self):
         earlystopper = EarlyStopping(patience=5, verbose=1)
         checkpointer = ModelCheckpoint('%s-model-dsbowl2018-1.h5' % config['model_name'], verbose=1,
                         save_best_only=True)

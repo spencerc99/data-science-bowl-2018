@@ -1,15 +1,15 @@
-from models.unet import Unet
+from models.unet import UNet
 
 __all__ = [
-    "unet",
-    "unet_dilated",
-    "rcnn",
+    "UNet",
+    "UNetDilated",
+    "RCNN",
 ]
 
 
-def make_model(config, env):
+def make_model(config):
     if config['model_name'] in __all__:
-        return globals()[config['model_name']](config, env)
+        return globals()[config['model_name']](config)
     else:
         raise Exception('The model name %s does not exist' %
                         config['model_name'])

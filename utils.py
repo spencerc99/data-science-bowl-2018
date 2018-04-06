@@ -22,7 +22,7 @@ from skimage.color import rgb2gray
 
 
 def load_input_image(patient, inp_folder=INPUT_FOLDER):
-    return rgb2gray(imread(inp_folder + patient + '/images/' + os.listdir(inp_folder + patient + '/images/')[0]))
+    return imread(inp_folder + patient + '/images/' + os.listdir(inp_folder + patient + '/images/')[0])
 
 
 def load_input_masks(patient):
@@ -54,12 +54,12 @@ def show_image_and_masks(patient):
     plt.imshow(composed_mask)
 
 
-def resize_images(img):
-    resizedimg = transform.resize(img, (IMG_WEIGHT, IMG_HEIGHT, IMG_CHANNELS), preserve_range=True)
+def resize_test_images(img):
+    resizedimg = transform.resize(img, (IMG_WIDTH, IMG_HEIGHT, 1), preserve_range=True)
     return resizedimg
 
 def resize_train_images(img):
-    return transform.resize(img, (IMG_WEIGHT, IMG_HEIGHT, IMG_CHANNELS), preserve_range=True)
+    return transform.resize(img, (IMG_WIDTH, IMG_HEIGHT, IMG_CHANNELS), preserve_range=True)
 
 def load_input_image(patient, inp_folder=INPUT_FOLDER):
     return rgb2gray(imread(inp_folder + patient + '/images/' + os.listdir(inp_folder + patient + '/images/')[0]))
@@ -87,10 +87,10 @@ def show_image_and_masks(patient):
     fig = plt.figure()
     plt.title("Patient: {}".format(patient))
     plt.subplot(211)
-    plt.imshow(resize_images(load_input_image(patient)))
+    plt.imshow(resize_test_images(load_input_image(patient)))
     masks = load_input_masks(patient)
     composed_mask = get_composed_masks_img(patient)
-    resized_cmask = resize_images(composed_mask)
+    resized_cmask = resize_test_images(composed_mask)
     plt.subplot(212)
     plt.imshow(resized_cmask)
 
@@ -102,7 +102,7 @@ def get_resized_train_data():
     for i in range(train_data):
         img = resize_train_images(load_input_image(patients[i]))
         input_x[i] = img
-        yimg = resize_images(get_composed_masks_img(patients[i]))
+        yimg = resize_test_images(get_composed_masks_img(patients[i]))
         input_y[i] = yimg
         # if img.shape != (256, 256):
         #     print("x dimensions wrong")
