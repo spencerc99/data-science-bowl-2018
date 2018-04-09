@@ -14,6 +14,7 @@ import shutil
 import tensorflow as tf
 from keras import backend as K
 from constants import *
+from skimage.transform import resize
 
 patients = os.listdir(INPUT_FOLDER)
 patients.sort()
@@ -103,13 +104,13 @@ def get_resized_train_data():
     #     input_x[i] = img
     #     yimg = resize_test_images(get_composed_masks_img(patients[i]))
     #     input_y[i] = yimg
+    train_ids = patients
     X_train = np.zeros((len(train_ids), IMG_HEIGHT, IMG_WIDTH,
                             IMG_CHANNELS), dtype=np.uint8)
     Y_train = np.zeros((len(train_ids), IMG_HEIGHT, IMG_WIDTH, 1), dtype=np.bool)
     print('Getting and resizing train images and masks ... ')
-    sys.stdout.flush()
     for n, id_ in tqdm(enumerate(train_ids), total=len(train_ids)):
-        path = TRAIN_PATH + id_
+        path = TRAIN_FOLDER + id_
         img = imread(path + '/images/' + id_ + '.png')[:, :, :IMG_CHANNELS]
         img = resize(img, (IMG_HEIGHT, IMG_WIDTH),
                     mode='constant', preserve_range=True)
