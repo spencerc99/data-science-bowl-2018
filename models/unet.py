@@ -11,7 +11,7 @@ from keras.callbacks import EarlyStopping, ModelCheckpoint
 from tqdm import tqdm
 from constants import *
 from utils import mean_iou, get_resized_train_data
-from basic_model import BasicModel
+from models.basic_model import BasicModel
 
 
 class UNet(BasicModel):
@@ -94,7 +94,3 @@ class UNet(BasicModel):
                                        save_best_only=True)
         return self.model.fit(X_train, y_train, validation_split=0.1, batch_size=16, epochs=50,
                                  callbacks=[earlystopper, checkpointer])  # Define IoU metric
-
-if __name__ == "__main__":
-    unet = UNet({"model_name" : "spicyboost", "random_seed" : 1, "max_iter" : 500000})
-    unet.train()
