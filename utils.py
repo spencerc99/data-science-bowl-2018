@@ -96,23 +96,33 @@ def show_image_and_masks(patient):
 
 def get_resized_train_data():
     # use this and then split stuff into validation
-    input_x = np.zeros((len(patients), 256, 256, 3))
-    input_y = np.zeros((len(patients), 256, 256, 1))
-    for i in range(len(patients)):
-        img = resize_train_images(load_input_image(patients[i]))
-        input_x[i] = img
-        yimg = resize_test_images(get_composed_masks_img(patients[i]))
-        input_y[i] = yimg
-        # if img.shape != (256, 256):
-        #     print("x dimensions wrong")
-        #     print(img.shape)
-        #     print(i)
-        # if yimg.shape != (256, 256):
-        #     print("y dimensions wrong")
-        #     print(yimg.shape)
-        #     print(i)
+    # input_x = np.zeros((len(patients), 256, 256, 3))
+    # input_y = np.zeros((len(patients), 256, 256, 1))
+    # for i in range(len(patients)):
+    #     img = resize_train_images(load_input_image(patients[i]))
+    #     input_x[i] = img
+    #     yimg = resize_test_images(get_composed_masks_img(patients[i]))
+    #     input_y[i] = yimg
+    X_train = np.zeros((len(train_ids), IMG_HEIGHT, IMG_WIDTH,
+                            IMG_CHANNELS), dtype=np.uint8)
+    Y_train = np.zeros((len(train_ids), IMG_HEIGHT, IMG_WIDTH, 1), dtype=np.bool)
+    print('Getting and resizing train images and masks ... ')
+    sys.stdout.flush()
+    for n, id_ in tqdm(enumerate(train_ids), total=len(train_ids)):
+        path = TRAIN_PATH + id_
+        img = imread(path + '/images/' + id_ + '.png')[:, :, :IMG_CHANNELS]
+        img = resize(img, (IMG_HEIGHT, IMG_WIDTH),
+                    mode='constant', preserve_range=True)
+        X_train[n] = img
+        mask = np.zeros((IMG_HEIGHT, IMG_WIDTH, 1), dtype=np.bool)
+        for mask_file in next(os.walk(path + '/masks/'))[2]:
+            mask_ = imread(path + '/masks/' + mask_file)
+            mask_ = np.expand_dims(resize(mask_, (IMG_HEIGHT, IMG_WIDTH), mode='constant',
+                                        preserve_range=True), axis=-1)
+            mask = np.maximum(mask, mask_)
+        Y_train[n] = mask
     
-    return input_x, input_y
+    return X_train, Y_train
 
 def rle_encoding(x):
     '''
