@@ -2,4 +2,6 @@ data/
 .ipynb_checkpoints/
 blog/
 __pycache__/
-logs/
+logs/ 
+.vscode
+.idea
