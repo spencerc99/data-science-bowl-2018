@@ -5,3 +5,4 @@ __pycache__/
 logs/ 
 .vscode
 .idea
+mask_rcnn_coco.h5
