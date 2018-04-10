@@ -49,27 +49,12 @@ def rle_encoding(x):
         if (b>prev+1): run_lengths.extend((b+1, 0))
         run_lengths[-1] += 1
         prev = b
-    return " ".join([str(i) for i in run_lengths])
-
+    return run_lengths
 
 def prob_to_rles(x, cutoff=0.5):
     lab_img = label(x > cutoff)
     for i in range(1, lab_img.max() + 1):
         yield rle_encoding(lab_img == i)
-
-
-
-# def analyze_image(patient):
-#     img = load_input_image(patient, inp_folder=TEST_FOLDER)
-#     img = utils.resize_train_images(img)
-#     img = np.expand_dims(img, axis=0)
-#     segmented_img = model.predict(img)
-#     segmented_img = np.squeeze(segmented_img)
-#     rle = prob_to_rles(segmented_img)
-#     s = pd.Series({'ImageId': patient, 'EncodedPixels': rle})
-#     im_df = pd.DataFrame()
-#     im_df = im_df.append(s, ignore_index=True)
-#     return im_df
 
 def create_submission_file(model):
     test_patients = os.listdir(TEST_FOLDER)
