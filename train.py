@@ -9,6 +9,7 @@ from utils import *
 # See the __init__ script in the models folder
 # `make_models` is a helper function to load any models you have
 from models import make_model
+from create_submission import create_submission_file
 
 flags = tf.app.flags
 flags.DEFINE_boolean('dry_run', False, 'Perform a dry_run (testing purpose)')
@@ -30,7 +31,9 @@ def main(_):
 
     model = make_model(config)
     
-    results = model.train()
+    model.train()
+    print("Finished training! making predictions with results")
+    create_submission_file(model)
 
 if __name__ == '__main__':
     tf.app.run()
