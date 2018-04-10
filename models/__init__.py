@@ -1,4 +1,5 @@
 from models.unet import UNet
+from models.rcnn import RCNN
 
 __all__ = [
     "UNet",
