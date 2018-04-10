@@ -68,30 +68,30 @@ def create_submission_file(model):
         img = imread(path + '/images/' + id_ + '.png')[:, :, :IMG_CHANNELS]
         sizes_test.append([img.shape[0], img.shape[1]])
         img = resize(img, (IMG_WIDTH, IMG_HEIGHT, IMG_CHANNELS),
-                    mode='constant', preserve_range=True))
-            X_test[n]=img
-            print(sizes_test)
-            print("Making predictions for %d test patients" % len(test_patients))
-            preds_test=model.predict(X_test, verbose = 1)
-            print(preds_test.shape)
-            preds_test_upsampled=[]
-            for i in range(len(preds_test)):
-            preds_test_upsampled.append(resize(np.squeeze(preds_test[i]),
-                                            (sizes_test[i][0],
-                                                sizes_test[i][1]),
-                                            mode='constant', preserve_range=True))
+                    mode='constant', preserve_range=True)
+        X_test[n]=img
+    
+    print("Making predictions for %d test patients" % len(test_patients))
+    preds_test=model.predict(X_test, verbose = 1)
+    print(preds_test.shape)
+    preds_test_upsampled=[]
+    for i in range(len(preds_test)):
+        preds_test_upsampled.append(resize(np.squeeze(preds_test[i]),
+                                    (sizes_test[i][0],
+                                        sizes_test[i][1]),
+                                    mode='constant', preserve_range=True))
 
-            new_test_ids=[]
-            rles=[]
-            for n, id_ in enumerate(test_patients):
-            rle=list(prob_to_rles(preds_test_upsampled[n]))
-            rles.extend(rle)
-            new_test_ids.extend([id_] * len(rle))
-            sub=pd.DataFrame()
-            sub['ImageId']=new_test_ids
-            sub['EncodedPixels']=pd.Series(rles).apply(
-        lambda x: ' '.join(str(y) for y in x))
-            sub.to_csv('submission_unet.csv', index=False)
+    new_test_ids=[]
+    rles=[]
+    for n, id_ in enumerate(test_patients):
+        rle=list(prob_to_rles(preds_test_upsampled[n]))
+        rles.extend(rle)
+        new_test_ids.extend([id_] * len(rle))
+
+    sub=pd.DataFrame()
+    sub['ImageId']=new_test_ids
+    sub['EncodedPixels']=pd.Series(rles).apply(lambda x: ' '.join(str(y) for y in x))
+    sub.to_csv('submission_unet.csv', index=False)
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
