@@ -24,7 +24,7 @@ import utils
 from skimage.morphology import label
 from constants import *
 from skimage.color import rgb2gray
-
+import sys
 # Define IoU metric
 def mean_iou(y_true, y_pred):
     prec = []
@@ -52,13 +52,12 @@ def rle_encoding(x):
     return " ".join([str(i) for i in run_lengths])
 
 
-# print('RLE Encoding for the current mask is: {}'.format(rle_encoding(label_mask)))
-model = load_model('logs/unet-model-dsbowl2018-1.h5', custom_objects={'mean_iou': mean_iou})
-
 def prob_to_rles(x, cutoff=0.5):
     lab_img = label(x > cutoff)
     for i in range(1, lab_img.max() + 1):
         yield rle_encoding(lab_img == i)
+
+
 
 # def analyze_image(patient):
 #     img = load_input_image(patient, inp_folder=TEST_FOLDER)
@@ -72,42 +71,46 @@ def prob_to_rles(x, cutoff=0.5):
 #     im_df = im_df.append(s, ignore_index=True)
 #     return im_df
 
-test_patients = os.listdir(TEST_FOLDER)
-# test_patients = next(os.walk(TEST_FOLDER))[1]
+def create_submission_file(model):
+    test_patients = os.listdir(TEST_FOLDER)
+    # test_patients = next(os.walk(TEST_FOLDER))[1]
+    X_test = np.zeros((len(test_patients), IMG_HEIGHT, IMG_WIDTH,
+                    IMG_CHANNELS), dtype=np.float32)
+    sizes_test = []
+    print('Getting and resizing test images ... ')
+    for n, id_ in tqdm(enumerate(test_patients), total=len(test_patients)):
+        path = TEST_FOLDER + id_
+        img = imread(path + '/images/' + id_ + '.png')[:, :, :IMG_CHANNELS]
+        sizes_test.append([img.shape[0], img.shape[1]])
+        img = resize(img, (IMG_WIDTH, IMG_HEIGHT, IMG_CHANNELS),
+                    mode='constant', preserve_range=True))
+            X_test[n]=img
+            print(sizes_test)
+            print("Making predictions for %d test patients" % len(test_patients))
+            preds_test=model.predict(X_test, verbose = 1)
+            print(preds_test.shape)
+            preds_test_upsampled=[]
+            for i in range(len(preds_test)):
+            preds_test_upsampled.append(resize(np.squeeze(preds_test[i]),
+                                            (sizes_test[i][0],
+                                                sizes_test[i][1]),
+                                            mode='constant', preserve_range=True))
 
-X_test = np.zeros((len(test_patients), IMG_HEIGHT, IMG_WIDTH,
-                   IMG_CHANNELS), dtype=np.float32)
-sizes_test = []
-print('Getting and resizing test images ... ')
-for n, id_ in tqdm(enumerate(test_patients), total=len(test_patients)):
-    path = TEST_FOLDER + id_
-    img = imread(path + '/images/' + id_ + '.png')[:, :, :IMG_CHANNELS]
-    sizes_test.append([img.shape[0], img.shape[1]])
-    img = resize(img, (IMG_WIDTH, IMG_HEIGHT, IMG_CHANNELS),
-                            mode='constant', preserve_range=True))
-    X_test[n] = img
-print(sizes_test)
-print("Making predictions for %d test patients" % len(test_patients))
-preds_test = model.predict(X_test, verbose=1)
-print(preds_test.shape)
-preds_test_upsampled = []
-for i in range(len(preds_test)):
-    preds_test_upsampled.append(resize(np.squeeze(preds_test[i]),
-                                       (sizes_test[i][0], sizes_test[i][1]),
-                                       mode='constant', preserve_range=True))
+            new_test_ids=[]
+            rles=[]
+            for n, id_ in enumerate(test_patients):
+            rle=list(prob_to_rles(preds_test_upsampled[n]))
+            rles.extend(rle)
+            new_test_ids.extend([id_] * len(rle))
+            sub=pd.DataFrame()
+            sub['ImageId']=new_test_ids
+            sub['EncodedPixels']=pd.Series(rles).apply(
+        lambda x: ' '.join(str(y) for y in x))
+            sub.to_csv('submission_unet.csv', index=False)
 
-new_test_ids = []
-rles = []
-for n, id_ in enumerate(test_patients):
-    rle = list(prob_to_rles(preds_test_upsampled[n]))
-    if len(rle) == 0:
-        from pdb import set_trace
-        set_trace()
-        print("help")
-    rles.extend(rle)
-    new_test_ids.extend([id_] * len(rle))
-sub = pd.DataFrame()
-sub['ImageId'] = new_test_ids
-sub['EncodedPixels'] = pd.Series(rles).apply(
-    lambda x: ' '.join(str(y) for y in x))
-sub.to_csv('submission_unet.csv', index=False)
+if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        raise Exception("pass the name of the weights file!")
+    weights_file = sys.argv[1]
+    model = load_model(weights_file, custom_objects={'mean_iou': mean_iou})
+    create_submission_file(model)
