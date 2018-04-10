@@ -21,6 +21,8 @@ patients.sort()
 
 from skimage.color import rgb2gray
 
+def get_patients():
+    return patients
 
 def load_input_image(patient, inp_folder=INPUT_FOLDER):
     return imread(inp_folder + patient + '/images/' + os.listdir(inp_folder + patient + '/images/')[0])
@@ -110,7 +112,7 @@ def get_resized_train_data():
     Y_train = np.zeros((len(train_ids), IMG_HEIGHT, IMG_WIDTH, 1), dtype=np.bool)
     print('Getting and resizing train images and masks ... ')
     for n, id_ in tqdm(enumerate(train_ids), total=len(train_ids)):
-        path = TRAIN_FOLDER + id_
+        path = TRAIN_FOLDER + '/input/' + id_
         img = imread(path + '/images/' + id_ + '.png')[:, :, :IMG_CHANNELS]
         img = resize(img, (IMG_HEIGHT, IMG_WIDTH),
                     mode='constant', preserve_range=True)
