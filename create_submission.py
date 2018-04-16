@@ -121,50 +121,42 @@ def create_submission_file_rcnn(model):
     test_patients = os.listdir(TEST_FOLDER)
     # test_patients = next(os.walk(TEST_FOLDER))[1]
     preds_test = []
+    rles = []
     print('Getting and resizing test images ... ')
     for n, id_ in tqdm(enumerate(test_patients), total=len(test_patients)):
         path = TEST_FOLDER + id_
         img = imread(path + '/images/' + id_ + '.png')[:, :, :IMG_CHANNELS]
-        img = resize(img, (IMG_WIDTH, IMG_HEIGHT, IMG_CHANNELS),
-                    mode='constant', preserve_range=True)
-        orig_shapes = [img.shape[0], img.shape[1]]
-        results = model.detect([img], verbose=1)
+        results = self.model.detect([img], verbose=0)
         temp = results[0]['masks']
         if temp.shape[2] != 1:
-            temp = temp[:,:,0]
-        preds_test.append(resize(np.squeeze(temp),
-                                (orig_shapes[0], orig_shapes[1]),
-                                 mode='constant', preserve_range=True))
-        print ("Finished for image %d" % n)
-    # for n, id_ in tqdm(enumerate(test_patients), total=len(test_patients)):
-    #     path = TEST_FOLDER + id_
-    #     img = imread(path + '/images/' + id_ + '.png')[:, :, :IMG_CHANNELS]
-    #     results = model.detect([img], verbose=1)
-    #     temp = results[0]['masks']
-    #     if temp.shape[2] != 1:
-    #         temp = temp[:, :, 0]
-    #     preds_test.append(np.squeeze(temp))
-    #     print("Finished for image %d" % n)
+            temp = temp[:, :, 0]
+        rle = mask_to_rle(id_, results[0]['masks'], results[0]['scores'])
+        rles.append(rle)
 
-    new_test_ids = []
-    rles = []
-    print ("Making RLEs")
-    for n, id_ in enumerate(test_patients):
-        rle = list(prob_to_rles(preds_test[n]))
-        rles.extend(rle)
-        new_test_ids.extend([id_] * len(rle))
-
-    sub = pd.DataFrame()
-    sub['ImageId'] = new_test_ids
-    sub['EncodedPixels'] = pd.Series(rles).apply(
-        lambda x: ' '.join(str(y) for y in x))
-    sub.to_csv('submission_mask_rcnn.csv', index=False)
+    submission = "ImageId,EncodedPixels\n" + "\n".join(rles)
+    with open("submission_mask_rcnn.csv", "w") as f:
+        f.write(submission)
 
 
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        raise Exception("pass the name of the weights file!")
-    weights_file = sys.argv[1]
-    model = load_model(weights_file, custom_objects={'dice_coef': utils.dice_coef})
-    create_submission_file(model)
-    # create_submission_file_rcnn(load_rcnn(weights_file))
+    import argparse
+
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description='test model on stage1 test')
+    parser.add_argument('--model_name', required=True,
+                        metavar="name of the model to train",
+                        help='Should be one of \"RCNN\" or \"UNet\"')
+    parser.add_argument('--weights', required=True,
+                        metavar="/path/to/weights.h5",
+                        help="Path to weights .h5 file or 'coco'")
+    args = parser.parse_args()
+
+    if args.model_name.lower() == 'unet':
+        model = load_model(args.weights, custom_objects={'dice_coef': utils.dice_coef})
+        create_submission_file(model)
+    elif args.model_name.lower() == 'rcnn':
+        model = load_rcnn(args.weights)
+        create_submission_file(model)
+    else:
+        raise Exception("invalid model name")
