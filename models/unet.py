@@ -6,17 +6,17 @@ from keras.layers import Input, Cropping2D, Dropout, ZeroPadding2D
 from keras.layers.convolutional import Conv2D, Conv2DTranspose
 from keras.layers.pooling import MaxPooling2D
 from keras.layers.merge import concatenate
-from utils import get_resized_train_data
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 from tqdm import tqdm
 from constants import *
-from utils import mean_iou, get_resized_train_data
+import utils
 from models.basic_model import BasicModel
-
+from create_submission import create_submission_file
 
 class UNet(BasicModel):
     def __init__(self, config):
         super().__init__(config)
+        self.weights_path = config['weights_path']
         inps = Input((IMG_WIDTH, IMG_HEIGHT, IMG_CHANNELS))
         conv1 = Conv2D(8, (3, 3), activation='relu',
                        padding='same', kernel_initializer='he_normal')(inps)
@@ -85,31 +85,17 @@ class UNet(BasicModel):
 
         self.model = Model(inputs=[inps], outputs=[outs])
         self.model.compile(
-            optimizer='adam', loss='binary_crossentropy', metrics=[mean_iou])
+            optimizer='adam', loss='binary_crossentropy', metrics=[utils.dice_coef])
+        if self.weights_path:
+            self.model.load_weights(self.weights_path)
 
     def train(self):
-
-
-        X_train, y_train = get_resized_train_data()
-        # Get and resize train images and masks
-
-        # Get and resize test images
-        # X_test = np.zeros((len(test_ids), IMG_HEIGHT, IMG_WIDTH,
-        #                 IMG_CHANNELS), dtype=np.uint8)
-        # sizes_test = []
-        # print('Getting and resizing test images ... ')
-        # sys.stdout.flush()
-        # for n, id_ in tqdm(enumerate(test_ids), total=len(test_ids)):
-        #     path = TEST_PATH + id_
-        #     img = imread(path + '/images/' + id_ + '.png')[:, :, :IMG_CHANNELS]
-        #     sizes_test.append([img.shape[0], img.shape[1]])
-        #     img = resize(img, (IMG_HEIGHT, IMG_WIDTH),
-        #                 mode='constant', preserve_range=True)
-        #     X_test[n] = img
-
-        # print('Done!')
+        X_train, y_train = utils.get_resized_train_data()
         earlystopper = EarlyStopping(patience=5, verbose=1)
         checkpointer = ModelCheckpoint('{}-model-dsbowl2018-1.h5'.format(self.model_name), verbose=1,
                                        save_best_only=True)
         return self.model.fit(X_train, y_train, validation_split=0.1, batch_size=8, epochs=50,
                                  callbacks=[earlystopper, checkpointer])  # Define IoU metric
+
+    def predict(self):
+        create_submission_file(self.model)

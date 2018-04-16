@@ -4,7 +4,8 @@ IMG_CHANNELS = 3
 DROPOUT_RATE = 0.2
 
 TRAIN_FOLDER = './data/train/'
-TEST_FOLDER = './data/test/'
-TEST_INPUT_FOLDER = './data/test/input/'
+TEST_FOLDER = './data/test2/'
+TEST_STAGE1_FOLDER = './data/test/'
+TEST_INPUT_FOLDER = './data/test2/input/'
 INPUT_FOLDER = TRAIN_FOLDER + 'input/'
 LABELS_FOLDER = TRAIN_FOLDER + 'labels/'

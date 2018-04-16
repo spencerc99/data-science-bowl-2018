@@ -20,7 +20,8 @@ from constants import *
 from imageio import imread
 from skimage.transform import resize
 from models.basic_model import BasicModel
-
+from imgaug import augmenters as iaa
+from tqdm import tqdm
 # Root directory of the project
 ROOT_DIR = os.getcwd()
 
@@ -44,18 +45,34 @@ class RCNNConfig(Config):
 
     # Number of classes (including background)
     NUM_CLASSES = 2
+    BACKBONE = "resnet50"
+
+    STEPS_PER_EPOCH = (657 * .9) // IMAGES_PER_GPU
+    VALIDATION_STEPS = max(1, 657 * .1 // IMAGES_PER_GPU)
+
+    DETECTION_MIN_CONFIDENCE = 0
+
+    USE_MINI_MASK = True
+    MINI_MASK_SHAPE = (56, 56)  # (height, width) of the mini-mask
 
     # Use small images for faster training. Set the limits of the small side
     # the large side, and that determines the image shape.
     IMAGE_MIN_DIM = 128
     IMAGE_MAX_DIM = 128
 
+    IMAGE_MIN_DIM = 512
+    IMAGE_MAX_DIM = 512
+    IMAGE_MIN_SCALE = 2.0
+
     # Use smaller anchors because our image and objects are small
     RPN_ANCHOR_SCALES = (8, 16, 32, 64, 128)  # anchor side in pixels
 
+    RPN_TRAIN_ANCHORS_PER_IMAGE = 64
     # Reduce training ROIs per image because the images are small and have
     # few objects. Aim to allow ROI sampling to pick 33% positive ROIs.
-    TRAIN_ROIS_PER_IMAGE = 32
+    TRAIN_ROIS_PER_IMAGE = 128
+
+    RPN_NMS_THRESHOLD = .95
 
 
 class RCNNDataset(rcnn_util.Dataset):
@@ -91,8 +108,6 @@ class RCNNDataset(rcnn_util.Dataset):
         image_id = self.patients[image_id]
         path = TRAIN_FOLDER + '/input/' + str(image_id)
         img = imread(path + '/images/' + str(image_id) + '.png')[:, :, :IMG_CHANNELS]
-        img = resize(img, (IMG_HEIGHT, IMG_WIDTH),
-                     mode='constant', preserve_range=True)
         return img
 
     def image_reference(self, image_id):
@@ -109,16 +124,68 @@ class RCNNDataset(rcnn_util.Dataset):
         """
         image_id = self.patients[image_id]
         path = TRAIN_FOLDER + '/input/' + image_id
-        mask = np.zeros((IMG_HEIGHT, IMG_WIDTH, 1), dtype=np.bool)
+        width, height, _ = imread(path + '/images/' + image_id + '.png').shape
+        mask = np.zeros((width, height, 1), dtype=np.bool)
         for mask_file in next(os.walk(path + '/masks/'))[2]:
             mask_ = imread(path + '/masks/' + mask_file)
-            mask_ = np.expand_dims(resize(mask_, (IMG_HEIGHT, IMG_WIDTH), mode='constant',
-                                          preserve_range=True), axis=-1)
+            # mask_ = np.expand_dims(resize(mask_, (IMG_HEIGHT, IMG_WIDTH), mode='constant',
+            #                               preserve_range=True), axis=-1)
+            mask_ = np.expand_dims(mask_, axis=-1)
             mask = np.maximum(mask, mask_)
 
         return mask.astype(np.bool), np.ones([mask.shape[-1]], dtype=np.int32)
+    
 
+def rle_encode(mask):
+    """Encodes a mask in Run Length Encoding (RLE).
+    Returns a string of space-separated values.
+    """
+    assert mask.ndim == 2, "Mask must be of shape [Height, Width]"
+    # Flatten it column wise
+    m = mask.T.flatten()
+    # Compute gradient. Equals 1 or -1 at transition points
+    g = np.diff(np.concatenate([[0], m, [0]]), n=1)
+    # 1-based indicies of transition points (where gradient != 0)
+    rle = np.where(g != 0)[0].reshape([-1, 2]) + 1
+    # Convert second index in each pair to lenth
+    rle[:, 1] = rle[:, 1] - rle[:, 0]
+    return " ".join(map(str, rle.flatten()))
 
+def rle_decode(rle, shape):
+    """Decodes an RLE encoded list of space separated
+    numbers and returns a binary mask."""
+    rle = list(map(int, rle.split()))
+    rle = np.array(rle, dtype=np.int32).reshape([-1, 2])
+    rle[:, 1] += rle[:, 0]
+    rle -= 1
+    mask = np.zeros([shape[0] * shape[1]], np.bool)
+    for s, e in rle:
+        assert 0 <= s < mask.shape[0]
+        assert 1 <= e <= mask.shape[0], "shape: {}  s {}  e {}".format(
+            shape, s, e)
+        mask[s:e] = 1
+    # Reshape and transpose
+    mask = mask.reshape([shape[1], shape[0]]).T
+    return mask
+
+def mask_to_rle(image_id, mask, scores):
+    "Encodes instance masks to submission format."
+    assert mask.ndim == 3, "Mask must be [H, W, count]"
+    # Remove mask overlaps
+    # Multiply each instance mask by its score order
+    # then take the maximum across the last dimension
+    order = np.argsort(scores)[::-1] + 1  # 1-based descending
+    mask = np.max(mask * np.reshape(order, [1, 1, -1]), -1)
+    # Loop over instance masks
+    lines = []
+    for o in order:
+        m = np.where(mask == o, 1, 0)
+        # Skip if empty
+        if m.sum() == 0.0:
+            continue
+        rle = rle_encode(m)
+        lines.append("{}, {}".format(image_id, rle))
+    return "\n".join(lines)
 # Train in two stages:
 # 1. Only the heads. Here we're freezing all the backbone layers and training only the randomly initialized layers (i.e. the ones that we didn't use pre-trained weights from MS COCO). To train only the head layers, pass `layers='heads'` to the `train()` function.
 # 
@@ -133,23 +200,35 @@ class RCNN(BasicModel):
     def __init__(self, config):
         super().__init__(config)
         self.lr = config['lr']
-        rcnn_config = RCNNConfig()
-        self.model = modellib.MaskRCNN(mode="training", config=rcnn_config,
+        self.weights_path = config['weights_path']
+        if config['type'] == 'train':
+            rcnn_config = RCNNConfig()
+            self.model = modellib.MaskRCNN(mode="training", config=rcnn_config,
                                   model_dir=MODEL_DIR)
-        self.init_with = config["init_with"] if "init_with" in config else "coco"  # imagenet, coco, or last
-
-        if self.init_with == "imagenet":
-            self.model.load_weights(self.model.get_imagenet_weights(), by_name=True)
-        elif self.init_with == "coco":
-            # Load weights trained on MS COCO, but skip layers that
-            # are different due to the different number of classes
-            # See README for instructions to download the COCO weights
-            self.model.load_weights(COCO_MODEL_PATH, by_name=True,
-                            exclude=["mrcnn_class_logits", "mrcnn_bbox_fc",
-                                        "mrcnn_bbox", "mrcnn_mask"])
-        elif self.init_with == "last":
-            # Load the last model you trained and continue training
-            self.model.load_weights(self.model.find_last()[1], by_name=True)
+        else:
+            class InferenceConfig(RCNNConfig):
+                GPU_COUNT = 1
+                IMAGES_PER_GPU = 1
+            inference_config = InferenceConfig()
+            self.model = modellib.MaskRCNN(mode="inference", config=inference_config,
+                             model_dir=MODEL_DIR)
+        self.init_with = config['init_with']
+        if self.weights_path:
+            self.model.load_weights(self.weights_path, by_name=True)
+        else:
+            if self.init_with == "imagenet":
+                self.model.load_weights(self.model.get_imagenet_weights(), by_name=True)
+            elif self.init_with == "coco":
+                # Load weights trained on MS COCO, but skip layers that
+                # are different due to the different number of classes
+                # See README for instructions to download the COCO weights
+                self.model.load_weights(COCO_MODEL_PATH, by_name=True,
+                                exclude=["mrcnn_class_logits", "mrcnn_bbox_fc",
+                                            "mrcnn_bbox", "mrcnn_mask"])
+            elif self.init_with == "last":
+                # Load the last model you trained and continue training
+                print ("Training RCNN with last")
+                self.model.load_weights(self.model.find_last()[1], by_name=True)
     
     def train(self):
         dataset_train = RCNNDataset()
@@ -160,13 +239,43 @@ class RCNN(BasicModel):
         dataset_val = RCNNDataset()
         dataset_val.load_images("val")
         dataset_val.prepare()
-        if self.init_with == "last":
-            self.model.train(dataset_train, dataset_val,
-                        learning_rate=self.lr/ 10,
-                        epochs=2,
-                        layers="all")
-        else:
-            self.model.train(dataset_train, dataset_val,
+
+        augmentation = iaa.SomeOf((0, 2), [
+            iaa.Fliplr(0.5),
+            iaa.Flipud(0.5),
+            iaa.OneOf([iaa.Affine(rotate=90),
+                        iaa.Affine(rotate=180),
+                        iaa.Affine(rotate=270)]),
+            iaa.Multiply((0.8, 1.5)),
+            iaa.GaussianBlur(sigma=(0.0, 5.0))
+        ])
+        self.model.train(dataset_train, dataset_val,
                         learning_rate=self.lr,
-                        epochs=1,
+                        epochs=20,
                         layers='heads')
+        self.model.train(dataset_train, dataset_val,
+                         # learning_rate=self.lr/ 10,
+                         learning_rate=self.lr,
+                         epochs=40,
+                         layers="all")
+
+    def predict(self):
+        test_patients = os.listdir(TEST_FOLDER)
+        # test_patients = next(os.walk(TEST_FOLDER))[1]
+        preds_test = []
+        rles = []
+        print('Getting and resizing test images ... ')
+        for n, id_ in tqdm(enumerate(test_patients), total=len(test_patients)):
+            path = TEST_FOLDER + id_
+            img = imread(path + '/images/' + id_ + '.png')[:, :, :IMG_CHANNELS]
+            results = self.model.detect([img], verbose=0)
+            temp = results[0]['masks']
+            if temp.shape[2] != 1:
+                temp = temp[:, :, 0]
+            rle = mask_to_rle(id_, results[0]['masks'], results[0]['scores'])
+            rles.append(rle)
+
+        submission = "ImageId,EncodedPixels\n" + "\n".join(rles)
+        with open("submission_mask_rcnn.csv", "w") as f:
+            f.write(submission)
+    
