@@ -22,6 +22,9 @@ from skimage.transform import resize
 from models.basic_model import BasicModel
 from imgaug import augmenters as iaa
 from tqdm import tqdm
+from sklearn.model_selection import KFold
+import datetime
+
 # Root directory of the project
 ROOT_DIR = os.getcwd()
 
@@ -81,9 +84,12 @@ class RCNNDataset(rcnn_util.Dataset):
     The images are generated on the fly. No file access required.
     """
 
-    def __init__(self):
+    def __init__(self, patients=None):
         super().__init__()
-        self.train_patients, self.val_patients = train_test_split(utils.get_patients(), test_size=.1, random_state=42)
+        if not patients:
+            self.train_patients, self.val_patients = train_test_split(utils.get_patients(), test_size=.1, random_state=42)
+        else:
+            self.train_patients, self.val_patients = patients
         self.patients = []
 
     def load_images(self, type):
@@ -125,15 +131,14 @@ class RCNNDataset(rcnn_util.Dataset):
         image_id = self.patients[image_id]
         path = TRAIN_FOLDER + '/input/' + image_id
         width, height, _ = imread(path + '/images/' + image_id + '.png').shape
-        mask = np.zeros((width, height, 1), dtype=np.bool)
+        mask = []
         for mask_file in next(os.walk(path + '/masks/'))[2]:
-            mask_ = imread(path + '/masks/' + mask_file)
+            mask_ = imread(path + '/masks/' + mask_file).astype(bool)
             # mask_ = np.expand_dims(resize(mask_, (IMG_HEIGHT, IMG_WIDTH), mode='constant',
             #                               preserve_range=True), axis=-1)
-            mask_ = np.expand_dims(mask_, axis=-1)
-            mask = np.maximum(mask, mask_)
-
-        return mask.astype(np.bool), np.ones([mask.shape[-1]], dtype=np.int32)
+            mask.append(mask_)
+        mask = np.stack(mask, axis=-1)
+        return mask, np.ones([mask.shape[-1]], dtype=np.int32)
     
 
 def rle_encode(mask):
@@ -201,63 +206,93 @@ class RCNN(BasicModel):
         super().__init__(config)
         self.lr = config['lr']
         self.weights_path = config['weights_path']
+        self.ensemble = config['ensemble']
+        self.init_with = config['init_with']
         if config['type'] == 'train':
             rcnn_config = RCNNConfig()
-            self.model = modellib.MaskRCNN(mode="training", config=rcnn_config,
-                                  model_dir=MODEL_DIR)
+            self.model = self.make_model("training", rcnn_config, MODEL_DIR)
         else:
             class InferenceConfig(RCNNConfig):
                 GPU_COUNT = 1
                 IMAGES_PER_GPU = 1
             inference_config = InferenceConfig()
-            self.model = modellib.MaskRCNN(mode="inference", config=inference_config,
-                             model_dir=MODEL_DIR)
-        self.init_with = config['init_with']
+            self.model = self.make_model('inference', inference_config, MODEL_DIR)
+    
+    def make_model(self, mode, config, model_dir):
+        model = modellib.MaskRCNN(mode=mode, config=config,
+                                  model_dir=model_dir)
         if self.weights_path:
-            self.model.load_weights(self.weights_path, by_name=True)
+            model.load_weights(self.weights_path, by_name=True)
         else:
             if self.init_with == "imagenet":
-                self.model.load_weights(self.model.get_imagenet_weights(), by_name=True)
+                model.load_weights(
+                    model.get_imagenet_weights(), by_name=True)
             elif self.init_with == "coco":
                 # Load weights trained on MS COCO, but skip layers that
                 # are different due to the different number of classes
                 # See README for instructions to download the COCO weights
-                self.model.load_weights(COCO_MODEL_PATH, by_name=True,
-                                exclude=["mrcnn_class_logits", "mrcnn_bbox_fc",
-                                            "mrcnn_bbox", "mrcnn_mask"])
+                model.load_weights(COCO_MODEL_PATH, by_name=True,
+                                        exclude=["mrcnn_class_logits", "mrcnn_bbox_fc",
+                                                 "mrcnn_bbox", "mrcnn_mask"])
             elif self.init_with == "last":
                 # Load the last model you trained and continue training
-                print ("Training RCNN with last")
-                self.model.load_weights(self.model.find_last()[1], by_name=True)
-    
+                print("Training RCNN with last")
+                model.load_weights(
+                    model.find_last()[1], by_name=True)
+
+        return model
+        
+
     def train(self):
-        dataset_train = RCNNDataset()
-        dataset_train.load_images("train")
-        dataset_train.prepare()
+        if not self.ensemble:
+            dataset_train = RCNNDataset()
+            dataset_train.load_images("train")
+            dataset_train.prepare()
 
-        # Validation dataset
-        dataset_val = RCNNDataset()
-        dataset_val.load_images("val")
-        dataset_val.prepare()
-
+            # Validation dataset
+            dataset_val = RCNNDataset()
+            dataset_val.load_images("val")
+            dataset_val.prepare()
+            self.train_model(self.model, dataset_train, dataset_val)
+        else:
+            model_dir = MODEL_DIR + "/rcnn_ensemble{:%Y%m%dT%H%M}".format(datetime.datetime.now())
+            rcnn_config = RCNNConfig()
+            k = 10
+            kf = KFold(n_splits=k, shuffle=True, random_state=42)
+            patients = utils.get_patients()
+            for train_idx, test_idx in kf.split(patients):
+                model = self.make_model('training', rcnn_config, model_dir)
+                dataset_train = RCNNDataset(patients=(patients[train_idx], patients[test_idx]))
+                dataset_train.load_images("train")
+                dataset_train.prepare()
+                dataset_val = RCNNDataset(patients=(patients[train_idx], patients[test_idx]))
+                dataset_val.load_images("val")
+                dataset_val.prepare()
+                
+                self.train_model(model, dataset_train, dataset_val)
+            
+    
+    def train_model(self, model, dataset_train, dataset_val):
         augmentation = iaa.SomeOf((0, 2), [
             iaa.Fliplr(0.5),
             iaa.Flipud(0.5),
             iaa.OneOf([iaa.Affine(rotate=90),
-                        iaa.Affine(rotate=180),
-                        iaa.Affine(rotate=270)]),
+                       iaa.Affine(rotate=180),
+                       iaa.Affine(rotate=270)]),
             iaa.Multiply((0.8, 1.5)),
             iaa.GaussianBlur(sigma=(0.0, 5.0))
         ])
-        self.model.train(dataset_train, dataset_val,
-                        learning_rate=self.lr,
-                        epochs=20,
-                        layers='heads')
-        self.model.train(dataset_train, dataset_val,
-                         # learning_rate=self.lr/ 10,
-                         learning_rate=self.lr,
-                         epochs=40,
-                         layers="all")
+        model.train(dataset_train, dataset_val,
+                            learning_rate=self.lr,
+                            epochs=20,
+                            layers='heads',
+                            augmentation=augmentation)
+        model.train(dataset_train, dataset_val,
+                            # learning_rate=self.lr/ 10,
+                            learning_rate=self.lr,
+                            epochs=40,
+                            layers="all",
+                            augmentation=augmentation)
 
     def predict(self):
         test_patients = os.listdir(TEST_FOLDER)

@@ -21,12 +21,12 @@ if __name__ == '__main__':
     print (args.model_name, args.weights)
     if args.model_name.lower() == 'rcnn':
         model = utils.load_rcnn(args.weights)
-        result = utils.test_prediction_on_stage1(model, 'rcnn', args.pathname)
+        result = utils.test_prediction_on_stage1(model, 'rcnn', args.csv)
     elif args.model_name.lower() == "unet":
         print("helo?")
         model = load_model(args.weights, custom_objects={'dice_coef': utils.dice_coef})
         print("helo?")
-        result = utils.test_prediction_on_stage1(model, 'unet', args.pathname)
+        result = utils.test_prediction_on_stage1(model, 'unet', args.csv)
     else:
         raise Exception("Invalid model name")
 

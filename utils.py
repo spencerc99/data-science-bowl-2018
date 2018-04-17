@@ -316,6 +316,10 @@ def decode_rle_csv(pathname, shapes=None):
     id_to_masks = defaultdict(list)
     i = 0
     for solution in solutions:
+        if len(solution) < 2:
+            print("o no")
+            from pdb import set_trace
+            set_trace()
         id_, rle = solution[:2]
         if not shapes:
             temp_shape = (int(solution[2]), int(solution[3]))
@@ -405,7 +409,7 @@ def test_prediction_on_stage1(model, name, pathname=None):
             sub.to_csv('submission_unet.csv', index=False)
             pathname = 'submission_unet.csv'
     
-    pred_masks_dct = decode_rle_csv(pathname, shapes=shapes)
+    pred_masks_dct = dict(decode_rle_csv(pathname, shapes=shapes))
     precisions = []
     for id_ in test_patients:
         precisions.append(calculate_average_precision(actual_masks_dct[id_], pred_masks_dct[id_]))

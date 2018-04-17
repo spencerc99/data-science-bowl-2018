@@ -11,7 +11,7 @@ from tqdm import tqdm
 from constants import *
 import utils
 from models.basic_model import BasicModel
-from create_submission import create_submission_file
+import create_submission
 
 class UNet(BasicModel):
     def __init__(self, config):
@@ -98,4 +98,4 @@ class UNet(BasicModel):
                                  callbacks=[earlystopper, checkpointer])  # Define IoU metric
 
     def predict(self):
-        create_submission_file(self.model)
+        create_submission.create_submission_file(self.model)

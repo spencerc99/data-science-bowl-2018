@@ -39,6 +39,10 @@ if __name__ == '__main__':
                          default=1e-3,
                          metavar="learning rate",
                          help="Learning rate")
+    parser.add_argument('--ensemble', required=False,
+                        default=False,
+                        metavar="ensemble option",
+                        help="ensemble option")
     args = parser.parse_args()
     weights = None if args.weights in ['coco', 'imagenet'] else args.weights
     config = {
@@ -48,13 +52,14 @@ if __name__ == '__main__':
         'random_seed': 42,
         'init_with': 'last' if args.weights not in ['coco', 'imagenet'] else args.weights,
         'weights_path': weights,
-        'type': args.command
+        'type': args.command,
+        'ensemble': bool(args.ensemble)
     }
 
     model = make_model(config)
     if args.command == "train":
         model.train()
-        model.predict()
+        # model.predict()
     elif args.command == "predict":
         if not args.weights:
             raise Exception("Weights file needs to be passed for prediction")

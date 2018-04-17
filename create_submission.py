@@ -25,9 +25,8 @@ from skimage.morphology import label
 from constants import *
 from skimage.color import rgb2gray
 import sys
-from models.rcnn import RCNNConfig
+from models.rcnn import RCNNConfig, mask_to_rle
 from models.rcnn_model import MaskRCNN
-
 # Define IoU metric
 def mean_iou(y_true, y_pred):
     prec = []
@@ -61,15 +60,15 @@ def rle_encoding(x):
     return run_lengths
 
 
-def create_submission_file(model):
-    test_patients = os.listdir(TEST_FOLDER)
+def create_submission_file(model, folder=TEST_STAGE1_FOLDER, csv_file='submission_unet.csv'):
+    test_patients = os.listdir(folder)
     # test_patients = next(os.walk(TEST_FOLDER))[1]
     X_test = np.zeros((len(test_patients), IMG_HEIGHT, IMG_WIDTH,
                     IMG_CHANNELS), dtype=np.float32)
     sizes_test = []
     print('Getting and resizing test images ... ')
     for n, id_ in tqdm(enumerate(test_patients), total=len(test_patients)):
-        path = TEST_FOLDER + id_
+        path = folder + id_
         img = imread(path + '/images/' + id_ + '.png')
         if len(img.shape) == 3:
             img = img[:, :, :IMG_CHANNELS]
@@ -100,7 +99,7 @@ def create_submission_file(model):
     sub=pd.DataFrame()
     sub['ImageId']=new_test_ids
     sub['EncodedPixels']=pd.Series(rles).apply(lambda x: ''.join(str(y) for y in x))
-    sub.to_csv('submission_unet.csv', index=False)
+    sub.to_csv(csv_file, index=False)
 
 def load_rcnn(weights_file):
     ROOT_DIR = os.getcwd()
@@ -117,24 +116,36 @@ def load_rcnn(weights_file):
     print("Finished loading weights")
     return model
 
-def create_submission_file_rcnn(model):
-    test_patients = os.listdir(TEST_FOLDER)
+def create_submission_file_rcnn(model, folder=TEST_STAGE1_FOLDER, csv_file='submission_mask_rcnn.csv'):
+    test_patients = os.listdir(folder)
     # test_patients = next(os.walk(TEST_FOLDER))[1]
     preds_test = []
     rles = []
     print('Getting and resizing test images ... ')
     for n, id_ in tqdm(enumerate(test_patients), total=len(test_patients)):
-        path = TEST_FOLDER + id_
-        img = imread(path + '/images/' + id_ + '.png')[:, :, :IMG_CHANNELS]
-        results = self.model.detect([img], verbose=0)
+        path = folder + id_
+        img = imread(path + '/images/' + id_ + '.png')
+        if len(img.shape) == 3:
+            img = img[:, :, :IMG_CHANNELS]
+        else:
+            img = resize(img, (img.shape[0], img.shape[1], 3), mode='constant', preserve_range=True)
+        results = model.detect([img], verbose=0)
         temp = results[0]['masks']
-        if temp.shape[2] != 1:
-            temp = temp[:, :, 0]
-        rle = mask_to_rle(id_, results[0]['masks'], results[0]['scores'])
-        rles.append(rle)
+        if temp.shape[0] == 0 or temp.shape[2] == 0:
+            # no prediction
+            rle = ""
+        else:
+            if temp.shape[2] != 1:
+                temp = temp[:, :, 0]
+            rle = mask_to_rle(id_, results[0]['masks'], results[0]['scores'])
+        if len(rle) < 3:
+            print("empty rle!!")
+            rles.append("{},".format(id_))
+        else:
+            rles.append(rle)
 
     submission = "ImageId,EncodedPixels\n" + "\n".join(rles)
-    with open("submission_mask_rcnn.csv", "w") as f:
+    with open(csv_file, "w") as f:
         f.write(submission)
 
 
@@ -144,19 +155,29 @@ if __name__ == '__main__':
     # Parse command line arguments
     parser = argparse.ArgumentParser(
         description='test model on stage1 test')
+    parser.add_argument('--type', required=False, default='stage1',
+                        metavar="which stage to test on",
+                        help='stage1 or stage2')
     parser.add_argument('--model_name', required=True,
                         metavar="name of the model to train",
                         help='Should be one of \"RCNN\" or \"UNet\"')
     parser.add_argument('--weights', required=True,
                         metavar="/path/to/weights.h5",
                         help="Path to weights .h5 file or 'coco'")
+    parser.add_argument('--csv', required=False,
+                        metavar="/path/to/submission.csv",
+                        help="Name of csv to save'")
     args = parser.parse_args()
+
+    folder = TEST_STAGE1_FOLDER
+    if args.type == 'stage2':
+        folder = TEST_FOLDER
 
     if args.model_name.lower() == 'unet':
         model = load_model(args.weights, custom_objects={'dice_coef': utils.dice_coef})
-        create_submission_file(model)
+        create_submission_file(model, folder, args.csv)
     elif args.model_name.lower() == 'rcnn':
         model = load_rcnn(args.weights)
-        create_submission_file(model)
+        create_submission_file_rcnn(model, folder, args.csv)
     else:
         raise Exception("invalid model name")
