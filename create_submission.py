@@ -148,6 +148,60 @@ def create_submission_file_rcnn(model, folder=TEST_STAGE1_FOLDER, csv_file='subm
     with open(csv_file, "w") as f:
         f.write(submission)
 
+def get_last_ensemble():
+    return [file for file in os.listdir("logs/") if 'rcnn_ensemble' in file][-1]
+
+def get_last_weight(ensemble_dir):
+    last_kfold = ensemble_dir + "/" + os.listdir(ensemble_dir)[-1]
+    last_epoch = last_kfold + "/" + os.listdir(last_kfold)[-1]
+    return last_epoch
+
+def create_submission_file_ensemble(K=5, folder=TEST_STAGE1_FOLDER, csv_file='submission_mask_rcnn_ensemble.csv'):
+    test_patients = os.listdir(folder)
+    # test_patients = next(os.walk(TEST_FOLDER))[1]
+    preds_test = []
+    rles = []
+    ENSEMBLE_DIR = get_last_ensemble()
+    print('Getting and resizing test images ... ')
+    for n, id_ in tqdm(enumerate(test_patients), total=len(test_patients)):
+        path = folder + id_
+        img = imread(path + '/images/' + id_ + '.png')
+        if len(img.shape) == 3:
+            img = img[:, :, :IMG_CHANNELS]
+        else:
+            img = resize(img, (img.shape[0], img.shape[1], 3), mode='constant', preserve_range=True)
+        
+        avg_scores = np.zeros(img.shape[:2], np.float32)
+        avg_masks = np.zeros(img.shape[:2], np.float32)
+        bad = False
+        for i in range(K):
+            model = load_rcnn(get_last_weight(ENSEMBLE_DIR))
+            r = model.detect([img], verbose=0)[0]
+            temp = r['masks']
+            if temp.shape[0] == 0 or temp.shape[2] == 0:
+                # no prediction
+                bad = True
+                break
+            else:
+                if temp.shape[2] != 1:
+                    temp = temp[:, :, 0]
+                avg_masks += r['masks']
+                avg_scores += r['scores']
+        if bad:
+            print("empty rle!!")
+            rles.append("{},".format(id_))
+            continue
+        
+        avg_masks /= K
+        avg_scores /= K 
+        avg_masks = avg_masks > (1.0/K)
+        rle = mask_to_rle(id_, avg_masks, avg_scores)
+        rles.append(rle)
+
+    submission = "ImageId,EncodedPixels\n" + "\n".join(rles)
+    with open(csv_file, "w") as f:
+        f.write(submission)
+
 
 if __name__ == '__main__':
     import argparse
@@ -179,5 +233,7 @@ if __name__ == '__main__':
     elif args.model_name.lower() == 'rcnn':
         model = load_rcnn(args.weights)
         create_submission_file_rcnn(model, folder, args.csv)
+    elif args.model_name.lower() == 'ensemble':
+        create_submission_file_ensemble(5, folder, args.csv)
     else:
         raise Exception("invalid model name")

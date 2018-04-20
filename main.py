@@ -21,7 +21,7 @@ if __name__ == '__main__':
         description='Mask R-CNN for nuclei counting and segmentation')
     parser.add_argument("command",
                         metavar="<command>",
-                        help="'train' or 'detect'")
+                        help="'train' or 'predict'")
     parser.add_argument('--model_name', required=True,
                         metavar="name of the model to train",
                         help='Should be one of \"RCNN\" or \"UNet\"')
@@ -43,6 +43,10 @@ if __name__ == '__main__':
                         default=False,
                         metavar="ensemble option",
                         help="ensemble option")
+    parser.add_argument('--start_ensemble', required=False,
+                        default=0,
+                        metavar="ensemble start",
+                        help="ensemble start")
     args = parser.parse_args()
     weights = None if args.weights in ['coco', 'imagenet'] else args.weights
     config = {
@@ -53,7 +57,8 @@ if __name__ == '__main__':
         'init_with': 'last' if args.weights not in ['coco', 'imagenet'] else args.weights,
         'weights_path': weights,
         'type': args.command,
-        'ensemble': bool(args.ensemble)
+        'ensemble': bool(args.ensemble),
+        'start_ensemble': int(args.start_ensemble)
     }
 
     model = make_model(config)

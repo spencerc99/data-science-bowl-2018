@@ -208,6 +208,7 @@ class RCNN(BasicModel):
         self.weights_path = config['weights_path']
         self.ensemble = config['ensemble']
         self.init_with = config['init_with']
+        self.start_ensemble = config['start_ensemble']
         if config['type'] == 'train':
             rcnn_config = RCNNConfig()
             self.model = self.make_model("training", rcnn_config, MODEL_DIR)
@@ -218,11 +219,13 @@ class RCNN(BasicModel):
             inference_config = InferenceConfig()
             self.model = self.make_model('inference', inference_config, MODEL_DIR)
     
-    def make_model(self, mode, config, model_dir):
+    def make_model(self, mode, config, model_dir, weights_path=None):
+        if not weights_path:
+            weights_path = self.weights_path
         model = modellib.MaskRCNN(mode=mode, config=config,
                                   model_dir=model_dir)
-        if self.weights_path:
-            model.load_weights(self.weights_path, by_name=True)
+        if weights_path:
+            model.load_weights(weights_path, by_name=True)
         else:
             if self.init_with == "imagenet":
                 model.load_weights(
@@ -242,6 +245,13 @@ class RCNN(BasicModel):
 
         return model
         
+    def get_last_ensemble(self):
+        return [file for file in os.listdir(MODEL_DIR) if 'rcnn_ensemble' in file][-1]
+
+    def get_last_weight(self, ensemble_dir):
+        last_kfold = ensemble_dir + "/" + os.listdir(ensemble_dir)[-1]
+        last_epoch = last_kfold + "/" + os.listdir(last_kfold)[-1]
+        return last_epoch
 
     def train(self):
         if not self.ensemble:
@@ -256,12 +266,24 @@ class RCNN(BasicModel):
             self.train_model(self.model, dataset_train, dataset_val)
         else:
             model_dir = MODEL_DIR + "/rcnn_ensemble{:%Y%m%dT%H%M}".format(datetime.datetime.now())
+            if self.start_ensemble > 0:
+                model_dir = MODEL_DIR + "/" + self.get_last_ensemble()
+                flag = True
             rcnn_config = RCNNConfig()
-            k = 10
+            k = 5
             kf = KFold(n_splits=k, shuffle=True, random_state=42)
-            patients = utils.get_patients()
+            patients = np.array(utils.get_patients(), dtype=object)
+            i = 1
             for train_idx, test_idx in kf.split(patients):
-                model = self.make_model('training', rcnn_config, model_dir)
+                print("Training model {} of ensemble".format(i))
+                if i - 1 < self.start_ensemble:
+                    i+=1
+                    continue
+                if flag:
+                    model = self.make_model('training', rcnn_config, model_dir, self.get_last_weight(model_dir))
+                    flag = False
+                else:
+                    model = self.make_model('training', rcnn_config, model_dir)
                 dataset_train = RCNNDataset(patients=(patients[train_idx], patients[test_idx]))
                 dataset_train.load_images("train")
                 dataset_train.prepare()
@@ -269,10 +291,10 @@ class RCNN(BasicModel):
                 dataset_val.load_images("val")
                 dataset_val.prepare()
                 
-                self.train_model(model, dataset_train, dataset_val)
-            
+                self.train_model(model, dataset_train, dataset_val, epochs_head=10, epochs_tail=20)
+                i+=1
     
-    def train_model(self, model, dataset_train, dataset_val):
+    def train_model(self, model, dataset_train, dataset_val, epochs_head=20, epochs_tail=40):
         augmentation = iaa.SomeOf((0, 2), [
             iaa.Fliplr(0.5),
             iaa.Flipud(0.5),
@@ -284,13 +306,13 @@ class RCNN(BasicModel):
         ])
         model.train(dataset_train, dataset_val,
                             learning_rate=self.lr,
-                            epochs=20,
+                            epochs=epochs_head,
                             layers='heads',
                             augmentation=augmentation)
         model.train(dataset_train, dataset_val,
                             # learning_rate=self.lr/ 10,
                             learning_rate=self.lr,
-                            epochs=40,
+                            epochs=epochs_tail,
                             layers="all",
                             augmentation=augmentation)
 
